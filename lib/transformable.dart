@@ -276,7 +276,15 @@ class _TransformableState extends State<Transformable>
       onScaleEnd: _onScaleEnd,
       onScaleStart: _onScaleStart,
       onScaleUpdate: _onScaleUpdate,
-      child: widget.child,
+      child: ClipRect(
+        // The scene is panned/zoomed/rotated using this Transform widget.
+        child: Transform(
+          transform: _transform,
+          child: Container(
+            child: widget.child,
+          ),
+        ),
+      ),
     );
   }
 
