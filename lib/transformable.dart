@@ -386,6 +386,7 @@ class _TransformableState extends State<Transformable>
         gestureType = _GestureType.translate;
       }
     }
+    print('Gesture detected: $gestureType');
     setState(() {
       if (gestureType == _GestureType.scale && _scaleStart != null) {
         // details.scale gives us the amount to change the scale as of the
