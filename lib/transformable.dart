@@ -9,8 +9,6 @@ class Transformable extends StatefulWidget {
     Key key,
     // The child to perform the transformations on.
     @required this.child,
-    // Callback
-    @required this.onMatrixUpdate,
     // Max/Min values
     this.maxScale = 2.5,
     this.minScale = 0.8,
@@ -20,7 +18,7 @@ class Transformable extends StatefulWidget {
     this.initialRotation, // Any and all of the possible transformations can be disabled.
     this.disableTranslation = false,
     this.disableScale = false,
-    this.disableRotation = false,
+    this.disableRotation = true,
     // Access to event callbacks from GestureDetector. Called with untransformed
     // coordinates in an Offset.
     this.onTapDown,
@@ -57,7 +55,6 @@ class Transformable extends StatefulWidget {
 
   /// [Matrix4] change notification callback
   ///
-  final MatrixGestureDetectorCallback onMatrixUpdate;
   final Widget child;
   final GestureTapDownCallback onTapDown;
   final GestureTapUpCallback onTapUp;
@@ -105,12 +102,7 @@ enum _GestureType {
 
 typedef MatrixGestureDetectorCallback = void Function(Matrix4 matrix);
 
-class _TransformableState extends State<Transformable>
-    with TickerProviderStateMixin {
-  Animation<Offset> _animation;
-  AnimationController _controller;
-  Animation<Matrix4> _animationReset;
-  AnimationController _controllerReset;
+class _TransformableState extends State<Transformable> {
   // The translation that will be applied to the scene (not viewport).
   // A positive x offset moves the scene right, viewport left.
   // A positive y offset moves the scene down, viewport up.
@@ -160,12 +152,6 @@ class _TransformableState extends State<Transformable>
   void initState() {
     super.initState();
     _transform = _initialTransform;
-    _controller = AnimationController(
-      vsync: this,
-    );
-    _controllerReset = AnimationController(
-      vsync: this,
-    );
   }
 
   @override
@@ -276,14 +262,9 @@ class _TransformableState extends State<Transformable>
       onScaleEnd: _onScaleEnd,
       onScaleStart: _onScaleStart,
       onScaleUpdate: _onScaleUpdate,
-      child: ClipRect(
-        // The scene is panned/zoomed/rotated using this Transform widget.
-        child: Transform(
-          transform: _transform,
-          child: Container(
-            child: widget.child,
-          ),
-        ),
+      child: Transform(
+        transform: _transform,
+        child: widget.child,
       ),
     );
   }
@@ -344,13 +325,6 @@ class _TransformableState extends State<Transformable>
       widget.onScaleStart(details);
     }
 
-    if (_controller.isAnimating) {
-      _controller.stop();
-      _controller.reset();
-      _animation?.removeListener(_onAnimate);
-      _animation = null;
-    }
-
     gestureType = null;
     setState(() {
       _scaleStart = _transform.getMaxScaleOnAxis();
@@ -373,20 +347,20 @@ class _TransformableState extends State<Transformable>
       details.focalPoint,
       _transform,
     );
-    if (gestureType == null) {
-      // Decide which type of gesture this is by comparing the amount of scale
-      // and rotation in the gesture, if any. Scale starts at 1 and rotation
-      // starts at 0. Translate will have 0 scale and 0 rotation because it uses
-      // only one finger.
-      if ((details.scale - 1).abs() > details.rotation.abs()) {
-        gestureType = _GestureType.scale;
-      } else if (details.rotation != 0) {
-        gestureType = _GestureType.rotate;
-      } else {
-        gestureType = _GestureType.translate;
-      }
+    // Decide which type of gesture this is by comparing the amount of scale
+    // and rotation in the gesture, if any. Scale starts at 1 and rotation
+    // starts at 0. Translate will have 0 scale and 0 rotation because it uses
+    // only one finger.
+    if ((details.scale - 1).abs() > details.rotation.abs()) {
+      gestureType = _GestureType.scale;
+      print('scale');
+    } else if (details.rotation != 0) {
+      gestureType = _GestureType.rotate;
+      print('rotate');
+    } else {
+      gestureType = _GestureType.translate;
+      print('translate');
     }
-    print('Gesture detected: $gestureType');
     setState(() {
       if (gestureType == _GestureType.scale && _scaleStart != null) {
         // details.scale gives us the amount to change the scale as of the
@@ -420,7 +394,6 @@ class _TransformableState extends State<Transformable>
         _transform = matrixTranslate(_transform, translationChange);
         _translateFromScene = fromViewport(details.focalPoint, _transform);
       }
-      widget.onMatrixUpdate(_transform);
     });
   }
 
@@ -435,9 +408,6 @@ class _TransformableState extends State<Transformable>
       _translateFromScene = null;
     });
 
-    _animation?.removeListener(_onAnimate);
-    _controller.reset();
-
     // If the scale ended with velocity, animate inertial movement
     final double velocityTotal = details.velocity.pixelsPerSecond.dx.abs() +
         details.velocity.pixelsPerSecond.dy.abs();
@@ -447,42 +417,10 @@ class _TransformableState extends State<Transformable>
 
     final Vector3 translationVector = _transform.getTranslation();
     final Offset translation = Offset(translationVector.x, translationVector.y);
-    final InertialMotion inertialMotion =
-        InertialMotion(details.velocity, translation);
-    _animation = Tween<Offset>(
-      begin: translation,
-      end: inertialMotion.finalPosition,
-    ).animate(_controller);
-    _controller.duration =
-        Duration(milliseconds: inertialMotion.duration.toInt());
-    _animation.addListener(_onAnimate);
-    _controller.fling();
-  }
-
-  // Handle inertia drag animation.
-  void _onAnimate() {
-    setState(() {
-      // Translate _transform such that the resulting translation is
-      // _animation.value.
-      final Vector3 translationVector = _transform.getTranslation();
-      final Offset translation =
-          Offset(translationVector.x, translationVector.y);
-      final Offset translationScene = fromViewport(translation, _transform);
-      final Offset animationScene = fromViewport(_animation.value, _transform);
-      final Offset translationChangeScene = animationScene - translationScene;
-      _transform = matrixTranslate(_transform, translationChangeScene);
-    });
-    if (!_controller.isAnimating) {
-      _animation?.removeListener(_onAnimate);
-      _animation = null;
-      _controller.reset();
-    }
   }
 
   @override
   void dispose() {
-    _controller.dispose();
-    _controllerReset.dispose();
     super.dispose();
   }
 }
